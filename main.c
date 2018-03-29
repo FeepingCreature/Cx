@@ -194,7 +194,7 @@ typedef struct
 void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *fn)
 {
     int framesize = 0;
-    int *offset = malloc(sizeof(int) * fn->reg_types_len);
+    int *offset = alloca(sizeof(int) * fn->reg_types_len);
     for (int i = 0; i < fn->reg_types_len; i++)
     {
         Type *type = &fn->reg_types_ptr[i];
@@ -203,7 +203,7 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
         offset[i] = framesize;
         framesize += type->size;
     }
-    void *frame = malloc(framesize);
+    void *frame = alloca(framesize);
 
     int block = 0, instr = 0; // entry point
     while (true)
@@ -256,8 +256,6 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
             {
                 int value = *(int*)(frame + offset[op->data1.num]);
                 *(int*) ret = value;
-                free(frame);
-                free(offset);
                 return;
             }
             case OP_CALL:
@@ -271,8 +269,8 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
                     callmapsize += type->size + type->alignmask;
                     callmapsize &= ~type->alignmask;
                 }
-                void *callmap = malloc(callmapsize);
-                void **args = malloc(sizeof(void*) * call_fn->base.args_len);
+                void *callmap = alloca(callmapsize);
+                void **args = alloca(sizeof(void*) * call_fn->base.args_len);
                 int call_offset = 0;
                 assert(params->regs_len == fn->base.args_len);
                 for (int i = 0; i < call_fn->base.args_len; i++)
@@ -289,9 +287,6 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
 
                 int ret;
                 interpret_closure(cif, &ret, args, call_fn);
-
-                free(callmap);
-                free(args);
 
                 *(int*)(frame + offset[op->target_reg]) = ret;
                 instr++;
