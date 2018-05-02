@@ -26,54 +26,75 @@ typedef enum
 typedef struct
 {
     FunctionType type;
-    Type *args_ptr;
+    Type **args_ptr;
     int args_len;
-    Type ret;
+    Type *ret;
 } Function;
 
-#define APPEND(BASE, VALUE...) ({ \
+#define APPEND(BASE, ...) ({ \
     BASE ## _ptr = realloc(BASE ## _ptr, sizeof(*BASE ## _ptr) * ++BASE ## _len); \
-    BASE ## _ptr[BASE ## _len- 1] = (typeof(*BASE ## _ptr)) VALUE; \
+    BASE ## _ptr[BASE ## _len- 1] = (typeof(*BASE ## _ptr)) __VA_ARGS__; \
     BASE ## _len - 1; \
 })
 
 typedef enum
 {
-    OP_READ_ARG, // int index
-    OP_LITERAL_INT, // int
-    OP_READ_MEM, // reg pointer
-    OP_WRITE_MEM, // reg pointer, reg source
-    OP_UNARY_OP, // int op, reg a
-    OP_BINARY_OP, // int op, reg a, reg b
-    OP_STACK_ALLOC, // ptr type
     OP_CALL, // ptr function, int len, ptr args
     // block enders
     OP_BRANCH, // int block
-    OP_BRANCH_IF, // reg condition, int block_then, int block_else
+    OP_TEST_BRANCH, // reg condition, int block_then, int block_else
     OP_RETURN // reg value
 } OpType;
 
 typedef enum
 {
-    NEG,
-    NOT
-} UnaryOpType;
+    REG,
+    DATA // named runtime reference (also used for literals)
+} ArgumentType;
 
-typedef enum
+typedef struct {
+    ArgumentType type;
+    union
+    {
+        int reg;
+        const char *data;
+    };
+} Argument;
+
+typedef struct
 {
-    ADD, SUB, MUL, DIV,
-    EQ, GT, LT, GE, LE
-} BinaryOpType;
+    int target_reg;
+    Argument function;
+    int args_len;
+    Argument *args_ptr;
+} CallOp;
+
+typedef struct
+{
+    int block;
+} BranchOp;
+
+typedef struct
+{
+    Argument condition;
+    int block_then, block_else;
+} TestBranchOp;
+
+typedef struct
+{
+    int reg;
+} ReturnOp;
 
 typedef struct
 {
     OpType type;
-    int target_reg;
     union
     {
-        int num;
-        void *ptr;
-    } data1, data2, data3;
+        CallOp call;
+        BranchOp branch;
+        TestBranchOp testbr;
+        ReturnOp ret;
+    };
 } Operation;
 
 typedef struct
@@ -87,15 +108,26 @@ typedef struct
     Function base;
     Block *blocks_ptr;
     int blocks_len;
-    Type *reg_types_ptr;
+    Type **reg_types_ptr;
     int reg_types_len;
 } DefinedFunction;
 
 typedef struct
 {
-    int *regs_ptr;
-    int regs_len;
+    Argument *args_ptr;
+    int args_len;
 } ParamList;
+
+// Literal names colliding with external names is undefined.
+typedef struct
+{
+    const char *name;
+    LiteralType type;
+    union
+    {
+        int int_value;
+        float float_value;
+
 
 void build_open_block(DefinedFunction *fn)
 {
@@ -118,7 +150,9 @@ int build_read_arg(DefinedFunction *fn, int index)
 
 int build_literal_int(DefinedFunction *fn, int value)
 {
-    APPEND(fn->reg_types, T_INT);
+    Type *t_intp = malloc(sizeof(Type));
+    *t_intp = T_INT;
+    APPEND(fn->reg_types, t_intp);
 
     Block *block = fn->blocks_ptr + fn->blocks_len - 1;
     APPEND(block->instrs, {
@@ -132,9 +166,12 @@ int build_literal_int(DefinedFunction *fn, int value)
 
 int build_binary_op(DefinedFunction *fn, BinaryOpType op, int r1, int r2)
 {
-    assert(fn->reg_types_ptr[r1].type == T_INT.type);
-    assert(fn->reg_types_ptr[r2].type == T_INT.type);
-    APPEND(fn->reg_types, T_INT);
+    assert(fn->reg_types_ptr[r1]->type == T_INT.type);
+    assert(fn->reg_types_ptr[r2]->type == T_INT.type);
+
+    Type *t_intp = malloc(sizeof(Type));
+    *t_intp = T_INT;
+    APPEND(fn->reg_types, t_intp);
 
     Block *block = fn->blocks_ptr + fn->blocks_len - 1;
     APPEND(block->instrs, {
@@ -176,7 +213,7 @@ void build_branch_if(DefinedFunction *fn, int rtest, int block1, int block2)
 
 void build_return(DefinedFunction *fn, int reg)
 {
-    assert(fn->base.ret.type == fn->reg_types_ptr[reg].type);
+    assert(fn->base.ret->type == fn->reg_types_ptr[reg]->type);
 
     Block *block = fn->blocks_ptr + fn->blocks_len - 1;
     APPEND(block->instrs, {
@@ -197,7 +234,7 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
     int *offset = alloca(sizeof(int) * fn->reg_types_len);
     for (int i = 0; i < fn->reg_types_len; i++)
     {
-        Type *type = &fn->reg_types_ptr[i];
+        Type *type = fn->reg_types_ptr[i];
         framesize += type->alignmask;
         framesize &= ~type->alignmask;
         offset[i] = framesize;
@@ -213,7 +250,7 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
         {
             case OP_READ_ARG:
                 assert(op->target_reg < fn->reg_types_len);
-                memcpy(frame + offset[op->target_reg], args[op->data1.num], fn->reg_types_ptr[op->target_reg].size);
+                memcpy(frame + offset[op->target_reg], args[op->data1.num], fn->reg_types_ptr[op->target_reg]->size);
                 instr++;
                 break;
             case OP_LITERAL_INT:
@@ -265,7 +302,7 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
                 int callmapsize = 0;
                 for (int i = 0; i < call_fn->base.args_len; i++)
                 {
-                    Type *type = &call_fn->base.args_ptr[i];
+                    Type *type = call_fn->base.args_ptr[i];
                     callmapsize += type->size + type->alignmask;
                     callmapsize &= ~type->alignmask;
                 }
@@ -275,9 +312,9 @@ void interpret_closure(ffi_cif *cif, void *ret, void *args[], DefinedFunction *f
                 assert(params->regs_len == fn->base.args_len);
                 for (int i = 0; i < call_fn->base.args_len; i++)
                 {
-                    Type *type = &call_fn->base.args_ptr[i];
+                    Type *type = call_fn->base.args_ptr[i];
 
-                    assert(fn->reg_types_ptr[params->regs_ptr[i]].type == fn->base.args_ptr[i].type);
+                    assert(fn->reg_types_ptr[params->regs_ptr[i]]->type == fn->base.args_ptr[i]->type);
                     memcpy(callmap + call_offset, frame + offset[params->regs_ptr[i]], type->size);
                     args[i] = callmap + call_offset;
 
@@ -308,20 +345,226 @@ void (*interpret_translate(DefinedFunction *fn))()
     assert(closure);
     for (int i = 0; i < fn->base.args_len; i++)
     {
-        Type type = fn->base.args_ptr[i];
-        assert(type.type == T_INT.type);
+        Type *type = fn->base.args_ptr[i];
+        assert(type->type == T_INT.type);
         args[i] = &ffi_type_sint32;
     }
-    assert(fn->base.ret.type == T_INT.type);
+    assert(fn->base.ret->type == T_INT.type);
     ffi_prep_cif(cif, FFI_DEFAULT_ABI, fn->base.args_len, &ffi_type_sint32, args);
     ffi_prep_closure_loc(closure, cif, (void(*)(ffi_cif*, void*, void**, void*)) interpret_closure, fn, ffi_fn);
     return ffi_fn;
 }
 
 int ack_native(int m, int n) {
-  if (m == 0) return n+1;
-  if (n == 0) return ack_native(m - 1, 1);
-  return ack_native(m - 1, ack_native(m, n - 1));
+    if (m == 0) return n+1;
+    if (n == 0) return ack_native(m - 1, 1);
+    return ack_native(m - 1, ack_native(m, n - 1));
+}
+
+const char *sample_code =
+    "int ack(int m, int n) {"
+        "if m == 0 return n+1;"
+        "if n == 0 return ack(m - 1, 1);"
+        "return ack(m - 1, ack(m, n - 1));"
+    "}";
+
+typedef enum
+{
+    SYMBOL_FUNCTION,
+} SymbolType;
+
+typedef struct
+{
+    SymbolType type;
+    void *ptr;
+} Symbol;
+
+typedef struct Namespace_
+{
+    char **names_ptr; int names_len;
+    Symbol *symbols_ptr; int symbols_len;
+    struct Namespace_ *parent;
+} Namespace;
+
+Type *parse_type(char **text_p, Namespace *context)
+{
+    assert(false);
+}
+
+void eat_whitespace(char **text_p)
+{
+    while (**text_p == ' ' || **text_p == '\r' || **text_p == '\n' || **text_p == '\t')
+    {
+        (*text_p)++;
+    }
+}
+
+bool accept(char **text_p, char *string)
+{
+    char *text = *text_p;
+
+    eat_whitespace(&text);
+    while (*string != 0 && *text != 0)
+    {
+        if (*string != *text) return false;
+        string++;
+        text++;
+    }
+    if (*string != 0) return false;
+
+    *text_p = text;
+    return true;
+}
+
+void expect(char **text_p, char *string)
+{
+    if (accept(text_p, string)) return;
+
+    assert(false);
+}
+
+bool isAlpha(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+bool isAlnum(char c)
+{
+    return isAlpha(c) || (c >= '0' && c <= '9');
+}
+
+char *accept_identifier(char **text_p)
+{
+    char *text = *text_p;
+    eat_whitespace(&text);
+
+    if (isAlpha(*text)) return NULL;
+
+    char *start = text++;
+
+    while (*text != 0 && isAlnum(*text))
+    {
+        text++;
+    }
+
+    char *res = malloc(text - start + 1);
+    memcpy(res, start, text - start);
+    res[text - start] = 0;
+
+    *text_p = text;
+
+    return res;
+}
+
+bool accept_keyword(char **text_p, char *keyword)
+{
+    char *text = *text_p;
+    char *ident = accept_identifier(&text);
+
+    if (!ident) return false;
+
+    if (strcmp(ident, keyword) != 0) return false;
+
+    *text_p = text;
+    return true;
+}
+
+Type *accept_type(char **text_p, Namespace *context)
+{
+    if (accept_keyword(text_p, "int"))
+    {
+        Type *type = malloc(sizeof(Type));
+        *type = T_INT;
+        return type;
+    }
+
+    return NULL;
+}
+
+void parse_statement(char **text_p, DefinedFunction *fn, Namespace *context);
+
+void parse_block(char **text_p, DefinedFunction *fn, Namespace *context)
+{
+    if (accept(text_p, "{"))
+    {
+        while (!accept(text_p, "}"))
+        {
+            // TODO scoping here
+            parse_statement(text_p, fn, context);
+        }
+    }
+}
+
+void parse_if(char **text_p, DefinedFunction *fn, Namespace *context)
+{
+
+}
+
+void parse_statement(char **text_p, DefinedFunction *fn, Namespace *context)
+{
+    if (!parse_block(text_p, fn, context) &&
+        !parse_if(text_p, fn, context) &&
+        !parse_assign(text_p, fn, context) &&
+        !parse_expr_stmt(text_p, fn, context))
+    {
+        assert(false);
+    }
+}
+
+void parse_function_body(char **text_p, DefinedFunction *fn, Namespace *context)
+{
+    parse_statement(text_p, fn, context);
+}
+
+Namespace *parse_function(char **text_p, Namespace *context)
+{
+    Namespace *new_ctx = malloc(sizeof(Namespace));
+    *new_ctx = (Namespace) {
+        .parent = context
+    };
+
+    char *text = *text_p;
+
+    Type *ret_type = accept_type(&text, context);
+
+    if (!ret_type) return NULL;
+
+    char *identifier = accept_identifier(&text);
+
+    if (!identifier) return NULL;
+
+    if (!accept(&text, "(")) return NULL;
+
+    Type **arg_types_ptr; int arg_types_len;
+    char **arg_names_ptr; int arg_names_len;
+
+    while (!accept(&text, ")"))
+    {
+        if (arg_types_len > 0)
+        {
+            expect(&text, ",");
+        }
+        Type *arg_type = accept_type(&text, context);
+        char *arg_name = accept_identifier(&text);
+        APPEND(arg_types, arg_type);
+        APPEND(arg_names, arg_name);
+    }
+
+    DefinedFunction *fn = malloc(sizeof(DefinedFunction));
+    *fn = (DefinedFunction) {
+        .base = {
+            .type = DEFINED_FUNCTION,
+            .args_ptr = arg_types_ptr,
+            .args_len = arg_types_len,
+            .ret = ret_type,
+        },
+    };
+
+    parse_function_body(&text, fn, new_ctx);
+
+    *text_p = text;
+
+    return new_ctx;
 }
 
 long long int usec()
@@ -333,20 +576,24 @@ long long int usec()
 
 int main()
 {
+    Type *t_intp = malloc(sizeof(Type));
+    *t_intp = T_INT;
+
     DefinedFunction ack = {
         .base = {
             .type = DEFINED_FUNCTION,
-            .ret = T_INT,
+            .ret = t_intp,
         }
     };
-    APPEND(ack.base.args, T_INT);
-    APPEND(ack.base.args, T_INT);
+    APPEND(ack.base.args, t_intp);
+    APPEND(ack.base.args, t_intp);
 
     build_open_block(&ack); // 0
-    int r1 = build_read_arg(&ack, 0); // m
-    int r2 = build_literal_int(&ack, 0); // 0
-    int r3 = build_binary_op(&ack, EQ, r1, r2); // m == 0
-    build_branch_if(&ack, r3, 1, 2); // if (m == 0)
+    Argument r1 = reg_arg(0); // 0 is first arg, m
+    Argument r2 = int_arg(&ack, 0);
+    Argument r3 = fn_arg(&ack, "_int_eq");
+    Argument r4 = build_call(&ack, r3, r1, r2); // m == 0
+    build_testbr(&ack, r4, 1, 2);
 
     build_open_block(&ack); // 1
     int r4 = build_read_arg(&ack, 1); // n
