@@ -1,0 +1,10 @@
+expression = [<symbol> | arg + offset | record | call <symbol> ([expression]*)
+closures??
+* rewrite interpreter test to use function = expression form
+  * define symbol table
+  * define ack in terms of symbol calls
+  * actually call interpreter-compiler to generate symtbl entries
+    * use ffi lambdas to make function pointers that call the interpreter
+* rewrite sample source code into function = expression form
+* parse sample source code and generate symbol table entries
+* run and validate.

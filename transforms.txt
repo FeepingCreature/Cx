@@ -1,0 +1,32 @@
+source
+int fac(int a) { if (a == 1) return 1; return fac(a - 1) * a; }
+->
+ast
+'int 'fac('int 'a) { if ('a == 1) return 1; return 'fac('a - 1) * 'a; }
+->
+lexical map
+'int 'fac('int 'a) [a=fac.a] { if (fac.a == 1) return 1; return fac(fac.a - 1) * fac.a; }
+->
+semantic map
+.int .fac(.int 'a) [a=fac.a] { if (fac.a == 1) return 1; return .fac(fac.a - 1) * fac.a; }
+->
+function my_fac(int);
+function my_fac(int):
+    if (_0 == 1) return 1;
+    return my_fac(_0 - 1) * _0;
+
+BUT FORGET ALL THAT HERE'S A BETTER WAY
+
+source
+int fac(int a) { if (a == 1) return 1; return fac(a - 1) * a; }
+->
+ast
+<@2 decl fac>: t2(<@4 decl a>: t1) { if (@4 == 1: t3): t4 { return 1; } return @2(@4 - 1: t5): t6 * @4; }
+[t1 := global 'int']
+[t2 := global 'int']
+[t3 := binary('=')(t1, number)]
+[t4 := unary(test)(t3)]
+[t2 := number]
+[t5 := binary('-')(t1, number)]
+[t6 := t2]
+[t2 := binary('*')(t6, t1)]
