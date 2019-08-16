@@ -41,4 +41,5 @@ mkdir -p model
     done
     echo "@enduml"
 ) > model/ClassDiagram.uml
-plantuml model/ClassDiagram.uml
+plantuml -tsvg model/ClassDiagram.uml
+convert model/ClassDiagram.svg model/ClassDiagram.png
