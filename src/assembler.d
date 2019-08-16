@@ -44,13 +44,8 @@ void acktest()
     {
         writefln!"debug: %s"(ack_tree);
         auto instance = resolve_types(ack_tree);
-        auto builder = new SSAFunctionBuilder(
-            "ack",
-            SSABasicType.type!int,
-            [SSABasicType.type!int, SSABasicType.type!int]);
 
-        ack_tree.encodeSymbol(builder, instance.types);
-        return builder.value;
+        return ack_tree.encodeSymbol(instance.types);
     }();
 
     writefln!"%s"(ack_ssa);

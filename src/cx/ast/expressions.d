@@ -4,6 +4,7 @@ import std.format : format;
 
 import cx.ast.base;
 import cx.ast.function_;
+import cx.type.base;
 import cx.type.primitives;
 import cx.type.typesource;
 import ssa.base : SSAReg = Reg;
@@ -20,15 +21,37 @@ class IntLiteral : Expression
         return new LiteralTypeSource(Int32.instance);
     }
 
-    override SSAReg encode(SSAFunctionBuilder fun, TypeMap)
+    override SSAReg encode(FunctionEncodeArgs args)
     {
-        return fun.literal(this.value);
+        return args.fun.literal(this.value);
     }
 
     override string toString() const { return format!"%s"(value); }
 }
 
-class Binary : Expression
+class StackFrameExpression : Expression
+{
+    TypeVar stackframeType;
+
+    this(BaseFunction fun) {
+        this.stackframeType = fun.stackframe;
+    }
+
+    override TypeSource type()
+    {
+        return new TypeVarSource(this.stackframeType);
+    }
+
+    override SSAReg encode(FunctionEncodeArgs args)
+    {
+        // assert(false);
+        return args.scope_.stackframe;
+    }
+
+    override string toString() const { return "_stackframe"; }
+}
+
+class Binary : Expression, TypeConstraint
 {
     enum Operation
     {
@@ -48,19 +71,19 @@ class Binary : Expression
         return new TypeVarSource(type_);
     }
 
-    override SSAReg encode(SSAFunctionBuilder fun, TypeMap map)
+    override SSAReg encode(FunctionEncodeArgs args)
     {
-        auto leftReg = left.encode(fun, map);
-        auto rightReg = right.encode(fun, map);
+        auto leftReg = left.encode(args);
+        auto rightReg = right.encode(args);
 
         final switch (operation)
         {
             case Operation.Add:
-                return fun.add(leftReg, rightReg);
+                return args.fun.add(leftReg, rightReg);
             case Operation.Sub:
-                return fun.sub(leftReg, rightReg);
+                return args.fun.sub(leftReg, rightReg);
             case Operation.Equal:
-                return fun.equal(leftReg, rightReg);
+                return args.fun.equal(leftReg, rightReg);
         }
     }
 
@@ -78,46 +101,30 @@ class Binary : Expression
 
     }
 
-    this(Operation operation, Expression left, Expression right, Function fun)
-    {
-        this.operation = operation;
-        this.left = left;
-        this.right = right;
-        this.type_ = fun.allocTypeVar;
-        fun.constraintList ~= new OperatorConstraint(this.type_, operation, [left.type, right.type]);
-    }
-}
-
-class OperatorConstraint : TypeConstraint
-{
-    TypeVar target;
-
-    Binary.Operation operation;
-
-    TypeSource[] args;
-
-    this(TypeVar target, Binary.Operation operation, TypeSource[] args)
-    {
-        this.target = target;
-        this.operation = operation;
-        this.args = args;
-    }
-
-    override string toString() const { return format!"[%s := %s(%(%s, %))]"(target, operation, args); }
-
     override bool resolve(TypeMap typeMap)
     {
         import std.algorithm : any, map;
         import std.range : array;
 
-        if (args.any!(a => !a.ready(typeMap)))
+        if (this.type_ in typeMap) return false;
+        if (!left.type.ready(typeMap) || !right.type.ready(typeMap))
         {
             return false;
         }
-        assert(args.map!(a => a.type(typeMap)).array == [Int32.instance, Int32.instance]);
+        assert(left.type.type(typeMap) == Int32.instance);
+        assert(right.type.type(typeMap) == Int32.instance);
 
-        typeMap[target] = Int32.instance;
+        typeMap[this.type_] = Int32.instance;
         return true;
+    }
+
+    this(Operation operation, Expression left, Expression right, BaseFunction fun)
+    {
+        this.operation = operation;
+        this.left = left;
+        this.right = right;
+        this.type_ = fun.allocTypeVar;
+        fun.constraintList ~= this;
     }
 }
 
@@ -136,15 +143,15 @@ class Call : Expression
         return format!"%s(%(%s, %))"(target.name, params);
     }
 
-    override SSAReg encode(SSAFunctionBuilder fun, TypeMap map)
+    override SSAReg encode(FunctionEncodeArgs args)
     {
         SSAReg[] paramRegs;
         foreach (param; params)
         {
-            paramRegs ~= param.encode(fun, map);
+            paramRegs ~= param.encode(args);
         }
-        auto funReg = target.encode(fun, map);
-        return fun.call(funReg, paramRegs);
+        auto funReg = target.encode(args);
+        return args.fun.call(funReg, paramRegs);
     }
 
     this(typeof(this.tupleof) args) { this.tupleof = args; }

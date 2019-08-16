@@ -5,92 +5,79 @@ import std.format : format;
 import std.typecons;
 
 import cx.base;
+import cx.type.base;
 import ssa.base : SSAReg = Reg;
-import ssa.fun : SSAFunctionBuilder = FunctionBuilder;
+import ssa.fun : SSAFunction = Function, SSAFunctionBuilder = FunctionBuilder;
 
-struct TypeVar
+class ConstraintList
 {
-    int index;
-    string toString() const { return format!"t%s"(index); }
-}
+    TypeConstraint[] constraints;
 
-struct TypeMap
-{
-    Nullable!Type[] types;
-
-    bool opBinaryRight(string op : "in")(TypeVar typeVar)
-    in (typeVar.index < types.length)
+    override string toString() const
     {
-        return !types[typeVar.index].isNull;
+        import std.algorithm : map;
+        import std.range : join;
+
+        return constraints.map!(a => format!"%s"(a)).join("\n");
     }
 
-    Type opIndex(TypeVar typeVar)
-    in (typeVar.index < types.length && !types[typeVar.index].isNull)
+    TypeConstraint opOpAssign(string op: "~")(TypeConstraint typeConstraint)
     {
-        return types[typeVar.index].get;
-    }
-
-    Type opIndexAssign(Type type, TypeVar typeVar)
-    in (typeVar.index < types.length && types[typeVar.index].isNull)
-    {
-        types[typeVar.index] = type;
-        return type;
+        constraints ~= typeConstraint;
+        return typeConstraint;
     }
 }
 
-abstract class TypeSource
+class BaseFunction
 {
-    abstract bool ready(TypeMap);
-    abstract Type type(TypeMap);
-    override abstract string toString() const;
+    int num_typevars;
+
+    ConstraintList constraintList;
+
+    TypeVar stackframe;
+
+    TypeVar allocTypeVar()
+    {
+        return TypeVar(num_typevars ++);
+    }
 }
 
-abstract class TypeConstraint
+struct Scope
 {
-    abstract bool resolve(TypeMap);
-    override abstract string toString() const;
+    BaseFunction fun;
+    Namespace namespace;
+    SSAReg stackframe;
+    int[] stackpath; // type indexes in the stackframe
 }
 
-class SetConstraint : TypeConstraint
+struct FunctionEncodeArgs
 {
-    TypeVar target;
-
-    TypeSource source;
-
-    this(TypeVar target, TypeSource source)
-    {
-        this.target = target;
-        this.source = source;
-    }
-
-    override string toString() const { return format!"[%s := %s]"(target, source); }
-
-    override bool resolve(TypeMap map)
-    {
-        if (!source.ready(map)) return false;
-
-        assert(target !in map, format!"%s in %s"(target, map));
-        map[target] = source.type(map);
-        return true;
-    }
+    SSAFunctionBuilder fun;
+    TypeMap map;
+    Scope scope_;
 }
 
 interface Expression : LanguageObject
 {
     TypeSource type();
-    SSAReg encode(SSAFunctionBuilder, TypeMap);
+    SSAReg encode(FunctionEncodeArgs);
     string toString() const;
 }
 
-abstract class Symbol
+interface LValue : Expression
 {
-    void encodeSymbol(SSAFunctionBuilder, TypeMap);
+    SSAReg encodeLocation(FunctionEncodeArgs);
 }
 
-abstract class Statement
+interface Symbol
 {
-    abstract void encode(SSAFunctionBuilder, TypeMap);
-    abstract override string toString() const;
+    SSAFunction encodeSymbol(TypeMap);
+}
+
+interface Statement
+{
+    void encode(FunctionEncodeArgs);
+    string toString() const;
 }
 
 class Namespace

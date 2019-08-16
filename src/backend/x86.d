@@ -149,6 +149,41 @@ void compile(X86Assembler assembler, SSAFunction function_)
                             jumps[tbr.then] ~= jmp(Condition.Equal);
                             jumps[tbr.else_] ~= jmp;
                         },
+                        (Alloca alloca)
+                        {
+                            sub(alloca.type.aligned_size, ESP);
+                            mov(EBP, EAX);
+                            add(ebp_offsets[alloca.target.index], EAX);
+                            store(ESP, EAX);
+                        },
+                        (Store store_)
+                        {
+                            // value is a value
+                            // target is a pointer
+                            import std.format:format;
+                            assert(store_.type.size == 4, format!"TODO %s"(store_));
+                            mov(EBP, EAX);
+                            add(ebp_offsets[store_.value.index], EAX); // eax = T*
+                            mov(EBP, EBX);
+                            add(ebp_offsets[store_.target.index], EBX); // ebx = T**
+                            load(EAX, ECX); // ecx = T
+                            load(EBX, EDX); // edx = T*
+                            store(ECX, EDX); // edx := T
+                        },
+                        (Load load_)
+                        {
+                            // value is a pointer
+                            // target is a value
+                            import std.format:format;
+                            assert(load_.type.size == 4, format!"TODO %s"(load_));
+                            mov(EBP, EAX);
+                            add(ebp_offsets[load_.value.index], EAX); // eax = T**
+                            mov(EBP, EBX);
+                            add(ebp_offsets[load_.target.index], EBX); // ebx = T*
+                            load(EAX, ECX); // ecx = T*
+                            load(ECX, ECX); // ecx = T
+                            store(ECX, EBX); // ebx := T
+                        },
                     );
                 }
             }

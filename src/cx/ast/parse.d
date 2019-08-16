@@ -8,9 +8,12 @@ import cx.ast.base;
 import cx.ast.expressions;
 import cx.ast.function_;
 import cx.ast.statements;
+import cx.type.base;
 import cx.type.primitives;
 import cx.type.typesource;
 import util.parser;
+
+alias FunScope = cx.ast.base.Scope;
 
 TypeSource parseType(Parser parser)
 {
@@ -131,13 +134,17 @@ Function parseFunction(Parser parser)
 
     auto fun = new Function(name, ret, args.map!"a.typeSource".array);
 
-    auto argTuples = args.enumerate.map!(pair => tuple(pair.value.name, new .Argument(fun, pair.index))).array;
+    // XXX
+    auto frame = new StackFrameExpression(fun);
+    auto argTuples = args.enumerate.map!(pair =>
+        Tuple!(string, Expression)(pair.value.name, new StructMember(frame, pair.index, fun))).array;
+//     auto argTuples = args.enumerate.map!(pair => tuple(pair.value.name, cast(Expression) new .Argument(fun, pair.index))).array;
 
     parser.succeed;
     return parseFunctionBody(parser, fun, argTuples);
 }
 
-Expression parseRootTerm(Parser parser, Scope scope_)
+Expression parseRootTerm(Parser parser, FunScope scope_)
 {
     auto _ = parser.begin;
 
@@ -168,7 +175,7 @@ Expression parseRootTerm(Parser parser, Scope scope_)
     return null;
 }
 
-Expression parseCall(Parser parser, Scope scope_, Function base)
+Expression parseCall(Parser parser, FunScope scope_, Function base)
 {
     auto _ = parser.begin;
 
@@ -207,7 +214,7 @@ Expression parseCall(Parser parser, Scope scope_, Function base)
     return new Call(base, args);
 }
 
-Expression parseTerm(Parser parser, Scope scope_)
+Expression parseTerm(Parser parser, FunScope scope_)
 {
     auto left = parseRootTerm(parser, scope_);
     if (!left) return null;
@@ -230,7 +237,7 @@ Expression parseTerm(Parser parser, Scope scope_)
     return left;
 }
 
-Statement parseIfStatement(Parser parser, Scope scope_)
+Statement parseIfStatement(Parser parser, FunScope scope_)
 {
     auto _ = parser.begin;
     // TODO acceptIdentifier
@@ -274,7 +281,7 @@ Statement parseIfStatement(Parser parser, Scope scope_)
     return new IfStatement(condition, thenStatement, elseStatement);
 }
 
-Expression parseInfixExpression(Parser parser, Scope scope_, int precedence = 0)
+Expression parseInfixExpression(Parser parser, FunScope scope_, int precedence = 0)
 {
     auto left = parseTerm(parser, scope_);
     if (!left) return null;
@@ -314,12 +321,12 @@ Expression parseInfixExpression(Parser parser, Scope scope_, int precedence = 0)
     return left;
 }
 
-Expression parseExpression(Parser parser, Scope scope_)
+Expression parseExpression(Parser parser, FunScope scope_)
 {
     return parseInfixExpression(parser, scope_, 0);
 }
 
-Statement parseReturnStatement(Parser parser, Scope scope_)
+Statement parseReturnStatement(Parser parser, FunScope scope_)
 {
     auto _ = parser.begin;
     // TODO acceptIdentifier
@@ -344,7 +351,7 @@ Statement parseReturnStatement(Parser parser, Scope scope_)
     return new ReturnStatement(expr);
 }
 
-Statement parseSequenceStatement(Parser parser, Scope scope_)
+Statement parseSequenceStatement(Parser parser, FunScope scope_)
 {
     auto _ = parser.begin;
     if (!parser.accept("{"))
@@ -374,7 +381,7 @@ Statement parseSequenceStatement(Parser parser, Scope scope_)
     return new SequenceStatement(statements);
 }
 
-Statement parseStatement(Parser parser, Scope scope_)
+Statement parseStatement(Parser parser, FunScope scope_)
 {
     auto _ = parser.begin;
     if (auto stmt = parseSequenceStatement(parser, scope_))
@@ -399,7 +406,7 @@ Statement parseStatement(Parser parser, Scope scope_)
     return null;
 }
 
-Function parseFunctionBody(Parser parser, Function fun, Tuple!(string, Argument)[] args)
+Function parseFunctionBody(Parser parser, Function fun, Tuple!(string, Expression)[] args)
 {
     auto namespace = new Namespace;
 
@@ -410,7 +417,7 @@ Function parseFunctionBody(Parser parser, Function fun, Tuple!(string, Argument)
         namespace.add(pair[0], pair[1]);
     }
 
-    auto body_ = parseStatement(parser, Scope(fun, namespace));
+    auto body_ = parseStatement(parser, FunScope(fun, namespace));
 
     if (!body_)
     {

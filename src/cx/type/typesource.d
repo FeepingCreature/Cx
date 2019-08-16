@@ -3,7 +3,7 @@ module cx.type.typesource;
 import std.format;
 
 import cx.base;
-import cx.ast.base;
+import cx.type.base;
 
 class LiteralTypeSource : TypeSource
 {
@@ -21,6 +21,7 @@ class GlobalTypeSource : TypeSource
     string name;
 
     override bool ready(TypeMap) { return true; }
+    override string toString() const { return this.name; }
     override Type type(TypeMap) { assert(false, format!"global lookup '%s' not resolved"(name)); }
 }
 

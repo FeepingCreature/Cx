@@ -14,6 +14,9 @@ alias Instr = Algebraic!(
     Return,
     Symbol,
     TestBranch,
+    Alloca,
+    Store,
+    Load,
 );
 
 alias toString = (Instr instr) => instr.dispatch!(
@@ -24,6 +27,9 @@ alias toString = (Instr instr) => instr.dispatch!(
     (Return return_) => format!"return %s"(return_.value),
     (Symbol symbol) => format!"%s\t= symbol \"%s\""(symbol.target, symbol.name),
     (TestBranch tbr) => format!"if %s then br %s else br %s"(tbr.condition, tbr.then, tbr.else_),
+    (Alloca alloca) => format!"%s\t= alloca(%s)"(alloca.target, alloca.type),
+    (Store store) => format!"*%s\t:= %s %s"(store.target, store.type, store.value),
+    (Load load) => format!"%s\t= %s *%s"(load.target, load.type, load.value),
 );
 
 enum typeIsBlockEnder(T) = is(T == Branch) || is(T == TestBranch) || is(T == Return);
@@ -69,6 +75,31 @@ struct Return
 struct Symbol
 {
     string name;
+
+    Reg target;
+}
+
+struct Alloca
+{
+    BasicType type;
+
+    Reg target;
+}
+
+struct Store
+{
+    BasicType type;
+
+    Reg value;
+
+    Reg target;
+}
+
+struct Load
+{
+    BasicType type;
+
+    Reg value;
 
     Reg target;
 }

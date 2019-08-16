@@ -1,6 +1,6 @@
 module cx.type.primitives;
 
-import cx.base;
+import cx.type.base;
 
 class Int32 : Type
 {

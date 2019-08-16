@@ -7,7 +7,7 @@ in nixpkgs32.stdenv.mkDerivation rec {
     ldc2 = nixpkgs32.callPackage /etc/nixos/overlays/ldc {};
     dub = nixpkgs32.callPackage /etc/nixos/overlays/dub {};
     buildInputs = [ ldc2 dub ] ++ (with nixpkgs; [
-        linuxPackages.perf doxygen doxygen_gui
+        doxygen doxygen_gui linuxPackages.perf plantuml nodePackages.svgo
     ]) ++ (with nixpkgs32; [
         openssl
         zlib

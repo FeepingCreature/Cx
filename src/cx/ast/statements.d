@@ -11,19 +11,20 @@ class IfStatement : Statement
     Statement then;
     Statement else_;
 
-    override void encode(SSAFunctionBuilder fun, TypeMap map)
+    override void encode(FunctionEncodeArgs args)
     {
-        auto condReg = condition.encode(fun, map);
+        auto fun = args.fun;
+        auto condReg = condition.encode(args);
         auto thenElseBranch = fun.testBranch(condReg);
 
         if (else_ !is null)
         {
             auto elseLabel = fun.here;
-            else_.encode(fun, map);
+            else_.encode(args);
             auto endBranch1 = fun.branch;
 
             auto thenLabel = fun.here;
-            then.encode(fun, map);
+            then.encode(args);
             auto endBranch2 = fun.branch;
 
             auto endLabel = fun.here;
@@ -35,7 +36,7 @@ class IfStatement : Statement
         else
         {
             auto thenLabel = fun.here;
-            then.encode(fun, map);
+            then.encode(args);
             auto endBranch = fun.branch;
 
             auto endLabel = fun.here;
@@ -56,9 +57,9 @@ class ReturnStatement : Statement
 {
     Expression value;
 
-    override void encode(SSAFunctionBuilder fun, TypeMap map)
+    override void encode(FunctionEncodeArgs args)
     {
-        fun.return_(value.encode(fun, map));
+        args.fun.return_(value.encode(args));
     }
 
     this(typeof(this.tupleof) args) { this.tupleof = args; }
@@ -73,11 +74,11 @@ class SequenceStatement : Statement
 {
     Statement[] statements;
 
-    override void encode(SSAFunctionBuilder fun, TypeMap map)
+    override void encode(FunctionEncodeArgs args)
     {
         foreach (statement; statements)
         {
-            statement.encode(fun, map);
+            statement.encode(args);
         }
     }
 

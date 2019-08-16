@@ -58,12 +58,15 @@ class FunctionBuilder
 
     Instr[] instrs;
 
-    this(string name, const BasicType ret, const BasicType[] args)
+    Reg stackframe;
+
+    this(string name, const BasicType ret, const BasicType[] args, const BasicType stackframeType)
     {
         this.name = name;
         this.ret = ret;
         this.args = args;
         this.variables = this.args.dup;
+        this.stackframe = alloca(stackframeType);
     }
 
     Reg alloc(BasicType type)
@@ -71,6 +74,15 @@ class FunctionBuilder
         variables ~= type;
 
         return Reg(variables.length - 1);
+    }
+
+    Reg alloca(BasicType type)
+    {
+        // TODO void*
+        auto target = alloc(BasicType.type!int);
+
+        instrs ~= Instr(Alloca(type, target));
+        return target;
     }
 
     @property BlockRef here()
@@ -109,6 +121,21 @@ class FunctionBuilder
     in (offset < args.length)
     {
         return Reg(offset);
+    }
+
+    // value is a value, target is a pointer
+    void store(BasicType type, Reg value, Reg target)
+    {
+        instrs ~= Instr(Store(type, value, target));
+    }
+
+    // value is a value, target is a pointer
+    Reg load(BasicType type, Reg value)
+    {
+        auto target = alloc(type);
+
+        instrs ~= Instr(Load(type, value, target));
+        return target;
     }
 
     void endBlock()
@@ -216,6 +243,32 @@ class FunctionBuilder
     in (instrs.empty)
     {
         return new Function(name, args, ret, variables, blocks);
+    }
+}
+
+class Scope
+{
+    Function function_;
+
+    Scope* parent;
+    Reg[Object] vars;
+
+    Reg get(Object key)
+    {
+        if (key in vars) return vars[key];
+        if (parent) return parent.get(key);
+        assert(false);
+    }
+
+    bool opIn_r(Object key)
+    {
+        return key in vars || parent && key in *parent;
+    }
+
+    void set(Object key, Reg value)
+    in (key !in this)
+    {
+        vars[key] = value;
     }
 }
 

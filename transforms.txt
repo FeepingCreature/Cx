@@ -30,3 +30,27 @@ ast
 [t5 := binary('-')(t1, number)]
 [t6 := t2]
 [t2 := binary('*')(t6, t1)]
+
+int ack(int a, int b)
+{
+    t0 _scope
+    t0: { int, int, t1 }
+    _scope.0 = a
+    _scope.1 = b
+    // int s = b + 1;
+    t1: { int, t2 }
+    _scope.2.0.0 = b + 1
+    if (a == 0) {
+        return s;
+    }
+    if (b == 0) {
+        t3: { int, t4 }
+        _scope.2.0.1.0.0 = a - 1
+        int t = a - 1;
+        return ack(t, 1);
+        t4: {}
+    }
+    t2: { t3 | t5 }
+    return ack(a - 1, ack(a, b - 1));
+    t5: {}
+}

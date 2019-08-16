@@ -1,4 +1,5 @@
 *.o
 .kdev4/
-doc/*
+doc/
+model/
 result
