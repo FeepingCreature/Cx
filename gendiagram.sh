@@ -43,3 +43,5 @@ mkdir -p model
 ) > model/ClassDiagram.uml
 plantuml -tsvg model/ClassDiagram.uml
 convert model/ClassDiagram.svg model/ClassDiagram.png
+pngquant model/ClassDiagram.png && mv model/ClassDiagram-fs8.png model/ClassDiagram.png
+pngcrush model/ClassDiagram.png && mv pngout.png model/ClassDiagram.png
