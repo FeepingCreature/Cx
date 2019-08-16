@@ -42,4 +42,3 @@ mkdir -p model
     echo "@enduml"
 ) > model/ClassDiagram.uml
 plantuml -tsvg model/ClassDiagram.uml
-svgo model/ClassDiagram.svg
